@@ -1,6 +1,11 @@
 module meta
 
 main {
+    dependencies {
+        new {
+            src = "https://github.com/Sife-ops/ansible_role_docker"
+        }
+    }
     galaxy_info {
         author = "Wyatt Goettsch"
         // description = "Installs Golang."

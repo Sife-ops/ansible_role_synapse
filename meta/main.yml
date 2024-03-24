@@ -1,4 +1,6 @@
 ---
+dependencies:
+- src: https://github.com/Sife-ops/ansible_role_docker
 galaxy_info:
   author: Wyatt Goettsch
   namespace: wgoettsch
