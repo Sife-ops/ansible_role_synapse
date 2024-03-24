@@ -1,0 +1,174 @@
+module tasks
+
+import "@ansipkl/AnsibleBuiltin.pkl" as Ab
+import "@ansipkl/CommunityDocker.pkl" as Cd
+import "@ansipkl/Playbook.pkl" as P
+
+main = P.NewRole(new Listing {
+    new Ab.SetFact {
+        options_mixin {
+            hasProfile = "{{ hostvars[inventory_hostname][profile] is defined }}"
+        }
+    }.Task()
+
+    new P.Block {
+        `when` = "hasProfile"
+        block {
+            //
+            new Ab.SetFact {
+                options_mixin {
+                    params = "{{ hostvars[inventory_hostname][profile] }}"
+                }
+            }.Task()
+            new Ab.SetFact {
+                options_mixin {
+                    container_name = "synapse_{{ params.server_name }}"
+                }
+            }.Task()
+            new Ab.SetFact {
+                options_mixin {
+                    data_path = "/root/synapse_{{ params.server_name }}"
+                }
+            }.Task()
+
+            //
+            new Ab.Stat {
+                options {
+                    path = "{{ data_path }}"
+                }
+                register = "synapse"
+            }.Task()
+
+            new P.Block {
+                `when` = "not synapse.stat.exists"
+                block {
+                    new Ab.File {
+                        name = "create synapse directory"
+                        options {
+                            state = "directory"
+                            path = "{{ data_path }}"
+                        }
+                    }.Task()
+
+                    new Ab.Shell {
+                        name = "create synapse files"
+                        options {
+                            cmd = """
+                            docker run -it --rm \\
+                                --mount type=bind,source={{ data_path }},target=/data \\
+                                -e SYNAPSE_SERVER_NAME={{ params.server_name }} \\
+                                -e SYNAPSE_REPORT_STATS=yes \\
+                                matrixdotorg/synapse:latest generate
+                            """
+                        }
+                    }.Task()
+
+                    new Ab.File {
+                        name = "fix permissions"
+                        options {
+                            path = "{{ data_path }}/{{ params.server_name }}.signing.key"
+                        }
+                        options_mixin {
+                            // todo bug
+                            mode = "0644"
+                        }
+                    }.Task()
+                }
+            }
+
+            new Ab.Blockinfile {
+                name = "enable registration"
+                options {
+                    path = "{{ data_path }}/homeserver.yaml"
+                    marker = "# {mark} enable reg {{ inventory_hostname }}"
+                    // insertafter: "EOF"
+                    block = """
+                    enable_registration: true
+                    enable_registration_without_verification: true
+                    """
+                }
+            }.Task()
+
+            new P.Block {
+                `when` = "params.registration is defined"
+                block {
+                    new Ab.Blockinfile {
+                        name = "registration files"
+                        options {
+                            create = true
+                            path = "{{ data_path }}/registration_{{ item.name }}.yaml"
+                            marker = "# {mark} registration {{ inventory_hostname }}"
+                            block = "{{ item.content }}"
+                        }
+                        loop = "{{ params.registration }}"
+                    }.Task()
+
+                    new Ab.Blockinfile {
+                        name = "registration section"
+                        options {
+                            path = "{{ data_path }}/homeserver.yaml"
+                            marker = "# {mark} registration {{ inventory_hostname }}"
+                            block = """
+                            app_service_config_files:
+                            """
+                        }
+                    }.Task()
+
+                    new Ab.Blockinfile {
+                        name = "registration items"
+                        options {
+                            path = "{{ data_path }}/homeserver.yaml"
+                            marker = "# {mark} registration {{ item.name }} {{ inventory_hostname }}"
+                            block = "  - \"/data/registration_{{ item.name}}.yaml\""
+                        }
+                        options_mixin {
+                            // todo bug
+                            insertafter = "app_service_config_files:"
+                        }
+                        loop = "{{ params.registration }}"
+                    }.Task()
+                }
+            }
+
+            new Cd.DockerContainer {
+                name = "synapse docker"
+                options {
+                    name = "{{ container_name }}"
+                    image = "docker.io/matrixdotorg/synapse:latest"
+                    image_name_mismatch = "ignore"
+                    state = "started"
+                    restart = true
+                    env {
+                        SYNAPSE_CONFIG_PATH = "/data/homeserver.yaml"
+                    }
+                    volumes {
+                      "{{ data_path }}:/data"
+                    }
+                }
+                options_mixin {
+                    // todo lookup real name
+                    ports {
+                      "8008:8008/tcp"
+                    }
+                }
+            }.Task()
+
+            // todo postgres
+            // db:
+            //   image: docker.io/postgres:12-alpine
+            //   # Change that password, of course!
+            //   environment:
+            //     - POSTGRES_USER=synapse
+            //     - POSTGRES_PASSWORD=varygudpasswd
+            //     # ensure the database gets created correctly
+            //     # https://matrix-org.github.io/synapse/latest/postgres.html#set-up-database
+            //     - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+            //   volumes:
+            //     # You may store the database tables in a local folder..
+            //     - ./schemas:/var/lib/postgresql/data
+            //     # .. or store them on some high performance storage for better results
+            //     # - /path/to/ssd/storage:/var/lib/postgresql/data
+        }
+    }
+})
+

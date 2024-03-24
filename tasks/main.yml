@@ -1,0 +1,73 @@
+---
+- ansible.builtin.set_fact:
+    hasProfile: '{{ hostvars[inventory_hostname][profile] is defined }}'
+- block:
+  - ansible.builtin.set_fact:
+      params: '{{ hostvars[inventory_hostname][profile] }}'
+  - ansible.builtin.set_fact:
+      container_name: synapse_{{ params.server_name }}
+  - ansible.builtin.set_fact:
+      data_path: /root/synapse_{{ params.server_name }}
+  - register: synapse
+    ansible.builtin.stat:
+      path: '{{ data_path }}'
+  - block:
+    - name: create synapse directory
+      ansible.builtin.file:
+        path: '{{ data_path }}'
+        state: directory
+    - name: create synapse files
+      ansible.builtin.shell:
+        cmd: |-
+          docker run -it --rm \
+              --mount type=bind,source={{ data_path }},target=/data \
+              -e SYNAPSE_SERVER_NAME={{ params.server_name }} \
+              -e SYNAPSE_REPORT_STATS=yes \
+              matrixdotorg/synapse:latest generate
+    - name: fix permissions
+      ansible.builtin.file:
+        path: '{{ data_path }}/{{ params.server_name }}.signing.key'
+        mode: '0644'
+    when: not synapse.stat.exists
+  - name: enable registration
+    ansible.builtin.blockinfile:
+      block: |-
+        enable_registration: true
+        enable_registration_without_verification: true
+      marker: '# {mark} enable reg {{ inventory_hostname }}'
+      path: '{{ data_path }}/homeserver.yaml'
+  - block:
+    - name: registration files
+      loop: '{{ params.registration }}'
+      ansible.builtin.blockinfile:
+        block: '{{ item.content }}'
+        create: true
+        marker: '# {mark} registration {{ inventory_hostname }}'
+        path: '{{ data_path }}/registration_{{ item.name }}.yaml'
+    - name: registration section
+      ansible.builtin.blockinfile:
+        block: 'app_service_config_files:'
+        marker: '# {mark} registration {{ inventory_hostname }}'
+        path: '{{ data_path }}/homeserver.yaml'
+    - name: registration items
+      loop: '{{ params.registration }}'
+      ansible.builtin.blockinfile:
+        block: '  - "/data/registration_{{ item.name}}.yaml"'
+        insertafter: 'app_service_config_files:'
+        marker: '# {mark} registration {{ item.name }} {{ inventory_hostname }}'
+        path: '{{ data_path }}/homeserver.yaml'
+    when: params.registration is defined
+  - name: synapse docker
+    community.docker.docker_container:
+      env:
+        SYNAPSE_CONFIG_PATH: /data/homeserver.yaml
+      image: docker.io/matrixdotorg/synapse:latest
+      image_name_mismatch: ignore
+      name: '{{ container_name }}'
+      restart: true
+      state: started
+      volumes:
+      - '{{ data_path }}:/data'
+      ports:
+      - 8008:8008/tcp
+  when: hasProfile

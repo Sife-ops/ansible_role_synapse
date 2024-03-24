@@ -1,0 +1,18 @@
+module meta
+
+main {
+    galaxy_info {
+        author = "Wyatt Goettsch"
+        // description = "Installs Golang."
+        namespace = "wgoettsch"
+        role_name = "ansible_role_synapse"
+        platforms = new Listing {
+            new Dynamic {
+                name = "Debian"
+                versions = new Listing {
+                    "bookworm"
+                }
+            }
+        }
+    }
+}

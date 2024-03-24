@@ -1,0 +1,9 @@
+---
+galaxy_info:
+  author: Wyatt Goettsch
+  namespace: wgoettsch
+  role_name: ansible_role_synapse
+  platforms:
+  - name: Debian
+    versions:
+    - bookworm
