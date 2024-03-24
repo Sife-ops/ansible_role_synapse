@@ -11,6 +11,10 @@ main = P.NewRole(new Listing {
         }
     }.Task()
 
+    new Ab.MetaTask {
+        `ansible.builtin.meta` = "end_play"
+    }
+
     new P.Block {
         `when` = "hasProfile"
         block {
