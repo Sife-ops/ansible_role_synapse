@@ -1,10 +1,6 @@
 ---
 - ansible.builtin.set_fact:
-    hasProfile: '{{ False }}'
-- when: profile is defined
-  ansible.builtin.set_fact:
     hasProfile: '{{ hostvars[inventory_hostname][profile] is defined }}'
-- ansible.builtin.meta: end_play
 - block:
   - ansible.builtin.set_fact:
       params: '{{ hostvars[inventory_hostname][profile] }}'

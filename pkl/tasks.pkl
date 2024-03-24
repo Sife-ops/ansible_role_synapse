@@ -7,20 +7,9 @@ import "@ansipkl/Playbook.pkl" as P
 main = P.NewRole(new Listing {
     new Ab.SetFact {
         options_mixin {
-            hasProfile = "{{ False }}"
-        }
-    }.Task()
-
-    new Ab.SetFact {
-        options_mixin {
             hasProfile = "{{ hostvars[inventory_hostname][profile] is defined }}"
         }
-        `when` = "profile is defined"
     }.Task()
-
-    new Ab.MetaTask {
-        `ansible.builtin.meta` = "end_play"
-    }
 
     new P.Block {
         `when` = "hasProfile"
